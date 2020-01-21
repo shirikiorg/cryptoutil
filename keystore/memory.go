@@ -3,99 +3,100 @@ package keystore
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
 
-type ecdsaMemStore map[string]*ecdsaKeyPair
+var ErrKeyNotExist = errors.New("key does not exist in store")
+
+type entry struct {
+	key interface{}
+}
+
+type store map[string]entry
 
 // Memory is a in memory key store
 type Memory struct {
-	*ecdsaMem
-}
-
-type ecdsaMem struct {
 	v  *atomic.Value
 	mu *sync.Mutex
 }
 
 // NewMemory returns a new in memory key store
 func NewMemory() *Memory {
-	return &Memory{
-		ecdsaMem: newECDSAMem(),
-	}
-}
-
-func newECDSAMem() *ecdsaMem {
 	var v atomic.Value
-	s := make(ecdsaMemStore)
-	v.Store(s)
+	v.Store(make(store))
 
-	return &ecdsaMem{
+	return &Memory{
 		v:  &v,
 		mu: &sync.Mutex{},
 	}
 }
 
-func (e ecdsaMem) ECDSAPrivateKey(_ context.Context, id string) (*ecdsa.PrivateKey, bool, error) {
-	s := e.v.Load().(ecdsaMemStore)
+func (m *Memory) GetPKCS8(ctx context.Context, id string) ([]byte, error) {
 
-	k, ok := s[id]
-	if k.PrivateKey == nil {
-		return nil, false, nil
+	k, err := m.Get(ctx, id)
+	if err != nil {
+		return nil, err
 	}
-	return k.PrivateKey, ok, nil
+
+	var pkcs8 []byte
+
+	switch v := k.(type) {
+	case *ecdsa.PublicKey, *rsa.PublicKey:
+		pkcs8, err = x509.MarshalPKIXPublicKey(v)
+	case *ecdsa.PrivateKey, *rsa.PrivateKey:
+		pkcs8, err = x509.MarshalPKCS8PrivateKey(v)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return pkcs8, nil
 }
 
-func (e ecdsaMem) ECDSAPublicKey(_ context.Context, id string) (*ecdsa.PublicKey, bool, error) {
-	s := e.v.Load().(ecdsaMemStore)
+func (m *Memory) Get(_ context.Context, id string) (interface{}, error) {
 
-	k, ok := s[id]
-	if k.PublicKey == nil {
-		return nil, false, nil
+	s := m.v.Load().(store)
+
+	e, ok := s[id]
+	if !ok {
+		return nil, ErrKeyNotExist
 	}
-	return k.PublicKey, ok, nil
+
+	return e.key, nil
 }
 
-func (e ecdsaMem) ECDSASetPrivateKey(_ context.Context, id string, k *ecdsa.PrivateKey) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	s := e.v.Load().(ecdsaMemStore)
-	ns := make(ecdsaMemStore, len(s))
+func (m *Memory) Set(_ context.Context, id string, k *pem.Block) error {
+	// first try to parse the pem blocks
+	var key interface{}
+	var err error
+
+	if strings.Contains(k.Type, "PUBLIC KEY") {
+		key, err = x509.ParsePKIXPublicKey(k.Bytes)
+	} else {
+		key, err = x509.ParsePKCS8PrivateKey(k.Bytes)
+	}
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.v.Load().(store)
+	ns := make(store, len(s))
 
 	for ok, ov := range s {
 		ns[ok] = ov
 	}
-	if v, ok := ns[id]; ok {
-		v.PrivateKey = k
-	} else {
-		ns[id] = &ecdsaKeyPair{
-			PrivateKey: k,
-			PublicKey:  &k.PublicKey,
-		}
-	}
 
-	e.v.Store(ns)
-	return nil
-}
+	ns[id] = entry{key: key}
 
-func (e ecdsaMem) ECDSASetPublicKey(_ context.Context, id string, k *ecdsa.PublicKey) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	s := e.v.Load().(ecdsaMemStore)
-	ns := make(ecdsaMemStore, len(s))
-
-	for ok, ov := range s {
-		ns[ok] = ov
-	}
-	if v, ok := ns[id]; ok {
-		v.PublicKey = k
-	} else {
-		ns[id] = &ecdsaKeyPair{
-			PublicKey: k,
-		}
-	}
-
-	e.v.Store(ns)
+	m.v.Store(ns)
 	return nil
 }

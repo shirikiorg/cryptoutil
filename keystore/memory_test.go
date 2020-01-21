@@ -2,40 +2,49 @@ package keystore
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"testing"
 
+	"github.com/shirikiorg/cryptoutil/ecdsautil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMemoryStore(t *testing.T) {
 	t.Run("OK ECDSA store and retrieve", func(t *testing.T) {
-		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		k, _, err := ecdsautil.GenerateKeyPEM(elliptic.P256(), rand.Reader)
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		pemBlock, _ := pem.Decode(k)
+
 		m := NewMemory()
-		if err := m.ECDSASetPrivateKey(
+		if err := m.Set(
 			context.Background(),
 			"foo",
-			k,
+			pemBlock,
 		); err != nil {
 			t.Fatal(err)
 		}
 
-		kk, ok, err := m.ECDSAPrivateKey(
+		kk, err := m.Get(
 			context.Background(),
 			"foo",
 		)
+
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !ok {
-			t.Fatal("should have found ecdsa key with id foo")
-		}
 
-		require.Equal(t, k, kk, "key retrieved should be the same as the key stored")
+		der, _ := x509.MarshalPKCS8PrivateKey(kk)
+		blk := pem.EncodeToMemory(&pem.Block{
+			Type:  "PRIVATE KEY",
+			Bytes: der,
+		})
+
+		require.Equal(t, string(k), string(blk), "key retrieved should be the same as the key stored")
 	})
 }

@@ -9,7 +9,7 @@ import (
 )
 
 func TestECDSAMethods(t *testing.T) {
-	privateKeyPem, publicKeyPem, err := GenerateKeyBytes(
+	privateKeyPem, _, err := GenerateKeyPEM(
 		elliptic.P521(),
 		rand.Reader,
 	)
@@ -17,18 +17,14 @@ func TestECDSAMethods(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	privateKey, publicKey, err := DecodeKey(
+	privateKey, err := DecodePrivateKey(
 		privateKeyPem,
-		publicKeyPem,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	privateKeyEncoded, publicKeyEncoded, err := EncodeKey(
-		privateKey,
-		publicKey,
-	)
+	privateKeyEncoded, err := EncodePrivateKey(privateKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,13 +33,6 @@ func TestECDSAMethods(t *testing.T) {
 		t,
 		string(privateKeyPem),
 		string(privateKeyEncoded),
-		"",
-	)
-
-	require.Equal(
-		t,
-		string(publicKeyPem),
-		string(publicKeyEncoded),
 		"",
 	)
 }

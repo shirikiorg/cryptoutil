@@ -16,8 +16,7 @@ var ErrKeyNotECDSA = errors.New("key is not ECDSA")
 // GenererateKeyBytes generates a key pair and returns the bytes for the
 // private key and the public key. Private key and public key are returned as
 // PEM encoded form.
-func GenerateKeyBytes(c elliptic.Curve, seed io.Reader) ([]byte, []byte, error) {
-
+func GenerateKeyPEM(c elliptic.Curve, seed io.Reader) ([]byte, []byte, error) {
 	privateKey, err := ecdsa.GenerateKey(c, seed)
 	if err != nil {
 		return nil, nil, errors.Wrap(
@@ -93,23 +92,6 @@ func EncodePublicKey(publicKey *ecdsa.PublicKey) ([]byte, error) {
 	}
 
 	return pemEncodedPublic, nil
-}
-
-// DecodeKey takes PEM blocks a DER encoded key pair bytes and returns the
-// parsed ecdsa.PrivateKey and ecdsa.PublicKey.
-func DecodeKey(pemEcodedPrivate []byte, pemEncodedPublic []byte) (*ecdsa.PrivateKey, *ecdsa.PublicKey, error) {
-
-	privateKey, err := DecodePrivateKey(pemEcodedPrivate)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	publicKey, err := DecodePublicKey(pemEncodedPublic)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return privateKey, publicKey, nil
 }
 
 // DecodePrivateKey decodes a PEM block of a DER encoded ecdsa private key
